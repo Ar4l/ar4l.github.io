@@ -1,5 +1,6 @@
 ---
 title: Aral 
+layout: default
 ---
 
 ## Aral 
