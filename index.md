@@ -4,7 +4,7 @@ layout: default
 ---
 
 ## Aral 
-ML Engineer at [JetBrains AI](https://www.jetbrains.com/ai/), working on Cloud AI for Code. 
+ML Engineer at [JetBrains AI](https://www.jetbrains.com/ai/), working on [Mellum](https://www.jetbrains.com/mellum/) (Evaluation/Post-Training). 
 
 [`github`](https://github.com/ar4l)
 [`linkedin`](https://www.linkedin.com/in/aral-dm/)
