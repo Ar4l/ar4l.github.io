@@ -10,5 +10,5 @@ ML Engineer at [JetBrains AI](https://www.jetbrains.com/ai/), working on [Mellum
 [`linkedin`](https://www.linkedin.com/in/aral-dm/)
 [`orcid`](https://orcid.org/0009-0003-5105-0518)
 [`huggingface`](https://huggingface.co/Ar4l)
-[`cv`](Aral%20%2825-08%29.pdf){: .button }
+[`cv`](aral-de-moor-cv.pdf){: .button }
 [`email`](mailto:me@aral.cc)
