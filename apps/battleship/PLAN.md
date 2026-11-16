@@ -1,6 +1,6 @@
 # Battleship: implementation plan
 
-This is a two-player online Battleship game. It is a static site built with vanilla TypeScript and Vite, and players connect peer-to-peer over WebRTC. It will be deployed later to `https://aral.cc/battleship/`, with Vite `base: '/battleship/'`. Project dir: `/home/aral/mellum-slack/battleship`.
+This is a two-player online Battleship game. It is a static site built with vanilla TypeScript and Vite, and players connect peer-to-peer over WebRTC. It will be deployed later to `https://aral.cc/battleship/`, with Vite `base: '/battleship/'`. Project dir: `apps/battleship` in the `Ar4l/ar4l.github.io` repo.
 
 Everything below has been decided. Where research offered alternatives, this plan names the choice and gives a one-line reason.
 
@@ -640,4 +640,4 @@ The npm scripts are:
 6. Salvo, Items with the items bar and previews, the timer, sound and the a11y pass.
 7. Visual polish against §9, screenshot baselines, the size check and a final `npm run check`.
 
-Deployment to GitHub Pages is not part of this work. `base: '/battleship/'` and hash routing make it a plain copy of `dist/`.
+The repo's `.github/workflows/pages.yml` deploys `dist/` to `/battleship/` on the user site. `base: '/battleship/'` and hash routing make it a plain copy of `dist/`.

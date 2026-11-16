@@ -15,14 +15,18 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
+  battleship:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/battleship
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: apps/battleship/package-lock.json
       - run: npm ci
       - run: npx tsc --noEmit
       - run: npx vitest run
@@ -34,13 +38,37 @@ jobs:
           CI: '1'
           NET: '0'
           WEBKIT: '1'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: battleship
+          path: apps/battleship/dist
+
+  site:
+    needs: battleship
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+      # Jekyll runs in a root-owned container, so assemble the artifact in a fresh directory.
+      - uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./
+          destination: ./_site
+      - uses: actions/download-artifact@v4
+        with:
+          name: battleship
+          path: battleship-dist
+      - run: |
+          mkdir out
+          cp -r _site/. out/
+          cp -r battleship-dist out/battleship
+          echo "$GITHUB_SHA" > out/battleship/version.txt
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: dist
+          path: out
 
   deploy:
-    needs: build
+    needs: site
     runs-on: ubuntu-latest
     environment:
       name: github-pages

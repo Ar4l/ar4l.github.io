@@ -1,3 +1,4 @@
 title: Aral
 markdown: kramdown
 theme: null
+exclude: [apps, README.md]
