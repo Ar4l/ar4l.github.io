@@ -21,8 +21,8 @@ jobs:
       run:
         working-directory: apps/battleship
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -38,7 +38,7 @@ jobs:
           CI: '1'
           NET: '0'
           WEBKIT: '1'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: battleship
           path: apps/battleship/dist
@@ -47,14 +47,14 @@ jobs:
     needs: battleship
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/configure-pages@v5
+      - uses: actions/checkout@v7
+      - uses: actions/configure-pages@v6
       # Jekyll runs in a root-owned container, so assemble the artifact in a fresh directory.
       - uses: actions/jekyll-build-pages@v1
         with:
           source: ./
           destination: ./_site
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: battleship
           path: battleship-dist
@@ -65,7 +65,7 @@ jobs:
           echo "$GITHUB_SHA" > out/battleship/version.txt
           # Old URL from before talks/ existed; it is already shared.
           cp out/talks/mellum2.1.pdf out/mellum2.1.pdf
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: out
 
@@ -77,4 +77,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
