@@ -63,6 +63,8 @@ jobs:
           cp -r _site/. out/
           cp -r battleship-dist out/battleship
           echo "$GITHUB_SHA" > out/battleship/version.txt
+          # Old URL from before talks/ existed; it is already shared.
+          cp out/talks/mellum2.1.pdf out/mellum2.1.pdf
       - uses: actions/upload-pages-artifact@v3
         with:
           path: out
