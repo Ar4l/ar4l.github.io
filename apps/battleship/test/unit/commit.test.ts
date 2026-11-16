@@ -1,0 +1,149 @@
+import { describe, expect, it } from 'vitest';
+import { commitBoard, commitCoin, hostStarts, randomBytes, bytesEqual } from '../../src/game/commit';
+import { verifyOpponent } from '../../src/game/verify';
+import { createMatch, localAttack, applyAnswer, remoteAttack } from '../../src/game/engine';
+import { resolveAttack } from '../../src/game/resolve';
+import { geoOf } from '../../src/game/rules';
+import { randomFleet } from '../../src/game/random';
+import { seededRng } from '../../src/game/seeded';
+import type { Answer, Attack, Config, Fleet } from '../../src/game/types';
+import { FLEET_A, FLEET_B, G, cfgOf } from './helpers';
+
+const cfg = (c: Partial<Config> = {}): Config => cfgOf({ items: true, ...c });
+
+/** Build an honest transcript of attacks against `fleet`. */
+function transcript(fleet: Fleet, attacks: Attack[]): { attack: Attack; answer: Answer }[] {
+  const shot = new Set<number>();
+  const out = [];
+  const m = createMatch(cfg(), fleet, false);
+  for (const attack of attacks) {
+    m.phase = 'theirTurn';
+    m.energy.them = 6;
+    const r = remoteAttack(m, attack);
+    if ('cheat' in r) throw new Error(r.cheat);
+    out.push({ attack, answer: r.answer });
+  }
+  void shot;
+  return out;
+}
+
+const ATTACKS: Attack[] = [
+  { k: 'fire', cells: [9] },
+  { k: 'item', item: 0, a: 11, b: 0 },
+  { k: 'item', item: 1, a: 9, b: 3 },
+  { k: 'item', item: 2, a: 27, b: 0 },
+  { k: 'item', item: 3, a: 5, b: 1 },
+  { k: 'fire', cells: [44] },
+];
+
+describe('commit-reveal', () => {
+  it('commit is deterministic and binds salt, fleet and the whole config (size and island seed too)', async () => {
+    const salt = randomBytes(16);
+    const c0 = cfgOf();
+    const c = await commitBoard(salt, FLEET_A, c0);
+    expect(c.length).toBe(32);
+    expect(bytesEqual(c, await commitBoard(salt, FLEET_A, { ...c0 }))).toBe(true);
+    for (const p of [{ noTouch: true }, { size: 2 as const }, { seed: 1 }, { turns: 1 as const }, { timer: 15 as const }])
+      expect(bytesEqual(c, await commitBoard(salt, FLEET_A, { ...c0, ...p })), JSON.stringify(p)).toBe(false);
+    expect(bytesEqual(c, await commitBoard(salt, FLEET_B, c0))).toBe(false);
+    expect(bytesEqual(c, await commitBoard(randomBytes(16), FLEET_A, c0))).toBe(false);
+  });
+  it('coin: commit checks and XOR rule', async () => {
+    const n = randomBytes(16);
+    expect(bytesEqual(await commitCoin(n), await commitCoin(n))).toBe(true);
+    expect(hostStarts(Uint8Array.of(0), Uint8Array.of(2))).toBe(true);
+    expect(hostStarts(Uint8Array.of(1), Uint8Array.of(2))).toBe(false);
+    expect(hostStarts(Uint8Array.of(3), Uint8Array.of(1))).toBe(true);
+  });
+});
+
+describe('verifyOpponent', () => {
+  const setup = async (c = cfg()) => {
+    const salt = randomBytes(16);
+    return { salt, commit: await commitBoard(salt, FLEET_B, c), t: transcript(FLEET_B, ATTACKS), c };
+  };
+  it('an honest game verifies', async () => {
+    const { salt, commit, t, c } = await setup();
+    expect(await verifyOpponent(c, commit, salt, FLEET_B, t)).toEqual({ ok: true });
+  });
+  it('detects a flipped hit -> miss', async () => {
+    const { salt, commit, t, c } = await setup();
+    t[0]!.answer = { k: 'cells', entries: [{ cell: 9, code: 0 }] };
+    expect(await verifyOpponent(c, commit, salt, FLEET_B, t)).toEqual({ ok: false, reason: 'Cheating detected: they reported a miss at J1 but a ship was there' });
+  });
+  it('detects a wrong sunk ship', async () => {
+    const { salt, commit, t, c } = await setup();
+    const line = t[4]!.answer;
+    if (line.k !== 'cells') throw 0;
+    line.entries[2] = { cell: 25, code: 5, ship: { anchor: 5, vertical: true } };
+    const v = await verifyOpponent(c, commit, salt, FLEET_B, t);
+    expect(v).toEqual({ ok: false, reason: 'Cheating detected: they reported their Submarine sunk at F3, it was their Cruiser sunk' });
+  });
+  it('detects a wrong sonar count', async () => {
+    const { salt, commit, t, c } = await setup();
+    t[1]!.answer = { k: 'sonar', count: 1 };
+    expect(await verifyOpponent(c, commit, salt, FLEET_B, t)).toEqual({ ok: false, reason: 'Cheating detected: they reported 1 ship cell in the sonar at A1–C3, there were 2' });
+  });
+  it('detects a torpedo that passed through a ship', async () => {
+    const { salt, commit, t, c } = await setup();
+    t[2]!.answer = { k: 'cells', entries: [] };
+    expect(await verifyOpponent(c, commit, salt, FLEET_B, t)).toEqual({ ok: false, reason: 'Cheating detected: their torpedo passed through a ship at J5' });
+  });
+  it('detects a torpedo hit reported on water before the real ship', async () => {
+    const { salt, commit, t, c } = await setup();
+    t[2]!.answer = { k: 'cells', entries: [{ cell: 59, code: 1 }] };
+    expect(await verifyOpponent(c, commit, salt, FLEET_B, t)).toEqual({ ok: false, reason: 'Cheating detected: they reported a torpedo hit at J6 but it was water' });
+  });
+  it('detects a board changed after the commit and a wrong salt', async () => {
+    const { salt, commit, t, c } = await setup();
+    const moved = FLEET_B.slice();
+    moved[4] = { anchor: 90, vertical: false };
+    expect(await verifyOpponent(c, commit, salt, moved, t)).toEqual({ ok: false, reason: "Their fleet doesn't match what they committed to at the start." });
+    expect(await verifyOpponent(c, commit, randomBytes(16), FLEET_B, t)).toMatchObject({ ok: false, reason: /committed/ });
+  });
+  it('detects an illegal layout under no-touch', async () => {
+    const c = cfg({ noTouch: true });
+    const salt = randomBytes(16);
+    const touching: Fleet = FLEET_A.slice();
+    touching[1] = { anchor: 10, vertical: false };
+    const commit = await commitBoard(salt, touching, c);
+    expect(await verifyOpponent(c, commit, salt, touching, [])).toEqual({ ok: false, reason: 'Their fleet layout was illegal.' });
+  });
+  it('the attacker-side transcript from the engine verifies', async () => {
+    const c = cfg({});
+    const salt = randomBytes(16);
+    const commit = await commitBoard(salt, FLEET_B, c);
+    const A = createMatch(c, FLEET_A, true);
+    const shot = new Set<number>();
+    for (const cell of [9, 19, 50, 1]) {
+      A.phase = 'myTurn';
+      const atk: Attack = { k: 'fire', cells: [cell] };
+      localAttack(A, atk);
+      expect(applyAnswer(A, resolveAttack(G, FLEET_B, shot, atk))).toEqual({ ok: true });
+      shot.add(cell);
+    }
+    expect(await verifyOpponent(c, commit, salt, FLEET_B, A.transcript)).toEqual({ ok: true });
+  });
+});
+
+describe('verifyOpponent on a Large board with islands', () => {
+  it('replays shots, a torpedo stopped by an island, and a cross on an island', async () => {
+    const c = cfg({ size: 2, seed: 4 }); // islands 13 25 | 56 57 | 106 118 130
+    const g = geoOf(c);
+    const fleet = randomFleet(g, seededRng(5));
+    const salt = randomBytes(16);
+    const commit = await commitBoard(salt, fleet, c);
+    const D = createMatch(c, fleet, false);
+    const t = [];
+    for (const attack of [{ k: 'fire', cells: [0] }, { k: 'item', item: 1, a: 4, b: 1 }, { k: 'item', item: 2, a: 13, b: 0 }, { k: 'item', item: 4, a: 50, b: 0 }] as Attack[]) {
+      D.phase = 'theirTurn';
+      D.energy.them = 6;
+      const r = remoteAttack(D, attack);
+      if ('cheat' in r) throw new Error(r.cheat);
+      t.push({ attack, answer: r.answer });
+    }
+    expect(await verifyOpponent(c, commit, salt, fleet, t)).toEqual({ ok: true });
+    // Same fleet, other islands: the commit no longer matches.
+    expect(await verifyOpponent({ ...c, seed: 5 }, commit, salt, fleet, t)).toMatchObject({ ok: false, reason: /committed/ });
+  });
+});

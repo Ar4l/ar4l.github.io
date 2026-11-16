@@ -1,0 +1,110 @@
+import type { Controller } from '../app/controller';
+import { rulesLine } from '../game/rules';
+import { announce, mountAnnouncer } from './announce';
+import { h } from './h';
+import { icon } from './icons';
+import { blink, type Screen } from './kit';
+import { battle } from './screens/battle';
+import { end } from './screens/end';
+import { home, mark } from './screens/home';
+import { lobbyGuest, lobbyHost } from './screens/lobby';
+import { notice } from './screens/notice';
+import { placement } from './screens/placement';
+import { armAudio, isMuted, play, setMuted, unlockAudio } from './sound';
+
+type Screens = Record<string, (c: Controller) => Screen>;
+const loadDirect = () => import('./screens/direct') as Promise<Screens>;
+/** Screens loaded on demand, by state kind. */
+const LAZY: Record<string, () => Promise<Screens>> = { 'direct-host': loadDirect, 'direct-guest': loadDirect, forwarded: loadDirect, stats: () => import('./screens/stats') };
+const loaded = new Map<unknown, Screens>();
+
+/** Mounts the shell and swaps screens when the state kind changes. */
+export function mountApp(root: HTMLElement, ctrl: Controller): void {
+  const mute = h('button', { cls: 'iconbtn', id: 'mute', 'aria-label': 'Sound' });
+  const paintMute = () => {
+    mute.setAttribute('aria-pressed', String(!isMuted()));
+    mute.title = isMuted() ? 'Sound off' : 'Sound on';
+    mute.replaceChildren(icon(isMuted() ? 'soundOff' : 'soundOn'));
+  };
+  mute.onclick = () => {
+    unlockAudio();
+    setMuted(!isMuted());
+    paintMute();
+  };
+  paintMute();
+  // Leaving a live game takes two steps: "Leave" asks, "Leave" again confirms.
+  // "Stay" lands where "Leave" was, so a double tap is harmless.
+  const confirm = (on: boolean) => {
+    header.classList.toggle('confirm', on);
+    if (on) stay.focus();
+  };
+  const live = () => ctrl.state.s === 'placement' || ctrl.state.s === 'battle';
+  const leave = h('button', { cls: 'textlink', id: 'leave', onclick: () => (live() ? confirm(true) : ctrl.leave()) }, 'Leave');
+  const yes = h('button', { cls: 'textlink ask', id: 'leave-yes', 'aria-label': 'Leave this game', onclick: () => ctrl.leave() }, 'Leave');
+  const stay = h('button', { cls: 'textlink ask', id: 'stay', 'aria-label': 'Stay in this game', onclick: () => (confirm(false), leave.focus()) }, 'Stay');
+  const meta = h('div', 'meta small mono muted');
+  // In the header row, in place of the brand, so the board below never moves under a finger.
+  const lost = h('p', { cls: 'status-line small', id: 'lost', role: 'status' }, blink(), 'Connection lost. Waiting…');
+  const header = h(
+    'header',
+    'top',
+    h('div', 'brand', mark(), h('span', null, 'Battleship')),
+    meta,
+    lost,
+    h('p', 'ask', 'Leave game?'),
+    yes,
+    stay,
+    leave,
+    mute,
+  );
+  const main = h('main', { id: 'main' });
+  root.replaceChildren(header, main);
+  mountAnnouncer(root);
+  armAudio();
+  ctrl.onSfx = play;
+  ctrl.onAnnounce = announce;
+
+  let kind = '';
+  let screen: Screen | null = null;
+  const render = () => {
+    const s = ctrl.state;
+    if (s.s !== kind) {
+      kind = s.s;
+      confirm(false);
+      const lazy = LAZY[s.s];
+      const mod = loaded.get(lazy);
+      if (lazy && !mod)
+        void lazy().then((d) => {
+          loaded.set(lazy, d);
+          kind = '';
+          render();
+        });
+      screen = lazy
+        ? mod
+          ? mod[s.s]!(ctrl)
+          : { el: h('section') }
+        : ({ home: () => home(ctrl, s.s === 'home' ? s.code : ''), 'lobby-host': lobbyHost, 'lobby-guest': lobbyGuest, placement, battle, end, notice } as Record<string, (c: Controller) => Screen>)[
+            s.s
+          ]!(ctrl);
+      main.replaceChildren(screen.el);
+      document.body.dataset.screen = s.s;
+      const focusable = screen.el.querySelector<HTMLElement>('h2');
+      if (s.s !== 'home' && focusable) {
+        focusable.tabIndex = -1;
+        focusable.focus({ preventScroll: true });
+      }
+      scrollTo(0, 0);
+    } else screen?.update?.();
+    const inGame = live() || s.s === 'end';
+    header.classList.toggle('is-home', s.s === 'home');
+    leave.hidden = !inGame;
+    header.classList.toggle('is-lost', !(lost.hidden = !(ctrl.lost && live())));
+    // During a series the score leads the rules line. Phones, which otherwise hide this line,
+    // show it in place of the wordmark.
+    const score = live() && ctrl.score;
+    meta.textContent = (score ? score + ' · ' : '') + (inGame ? rulesLine(ctrl.config) : '');
+    header.classList.toggle('scored', !!score);
+  };
+  ctrl.subscribe(render);
+  render();
+}

@@ -1,0 +1,25 @@
+/* Direct-link screens only; injected with the lazy chunk. */
+.linkbox.small {
+  font-size: 12px;
+  line-height: 18px;
+}
+.steps {
+  list-style: none;
+  padding: 0;
+  border-bottom: 1px solid var(--rule);
+}
+.steps li {
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  gap: 8px;
+  padding: 20px 0;
+  border-top: 1px solid var(--rule);
+}
+.steps .stack {
+  gap: 12px;
+  min-width: 0;
+}
+.step-n {
+  font-size: 14px;
+  color: var(--muted);
+}
